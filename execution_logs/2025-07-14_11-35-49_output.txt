@@ -1,0 +1,2 @@
+❌ Python Error:
+Can only use .dt accessor with datetimelike values

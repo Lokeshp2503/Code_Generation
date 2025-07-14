@@ -1,0 +1,4 @@
+✅ SQL executed.
+Output:
+ COUNT(*)
+    12546

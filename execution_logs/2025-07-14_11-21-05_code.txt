@@ -1,0 +1,5 @@
+import pandas as pd
+
+df = pd.read_excel('old_applicants.xlsx')
+df = df.dropna(subset=['Gender'])
+print(len(df))

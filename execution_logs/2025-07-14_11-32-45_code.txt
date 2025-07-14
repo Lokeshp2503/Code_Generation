@@ -1,0 +1,3 @@
+SELECT COUNT(*) 
+FROM old_applicants 
+WHERE Loan_Amount > (SELECT AVG(Loan_Amount) FROM old_applicants);

@@ -1,0 +1,6 @@
+✅ SQL executed.
+Output:
+Gender  Count
+  None     71
+Female  12482
+  Male  12446

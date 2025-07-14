@@ -1,0 +1,3 @@
+SELECT Gender, COUNT(*) as Count
+FROM old_applicants
+GROUP BY Gender;

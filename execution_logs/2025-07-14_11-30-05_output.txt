@@ -1,0 +1,6 @@
+✅ SQL executed.
+Output:
+Applicant_Type  Count
+          None     71
+     Corporate  12395
+    Individual  12533

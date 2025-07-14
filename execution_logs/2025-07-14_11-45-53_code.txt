@@ -1,0 +1,2 @@
+SELECT DISTINCT Applicant_ID
+FROM old_applicants;

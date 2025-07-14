@@ -1,0 +1,3 @@
+SELECT Applicant_Type, COUNT(*) as Count
+FROM old_applicants
+GROUP BY Applicant_Type;
