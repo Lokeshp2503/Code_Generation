@@ -1,0 +1,2 @@
+❌ Python Error:
+Cannot mask with non-boolean array containing NA / NaN values

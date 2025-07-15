@@ -1,0 +1,185 @@
+import pandas as pd
+import requests
+import json
+import os
+import traceback
+import sqlite3
+import contextlib
+import io
+import re
+from flask import Flask, session
+import secrets
+
+# === Flask App Setup ===
+app = Flask(__name__)
+app.secret_key = secrets.token_hex(16)
+user_sessions = {}
+
+def get_user_sas_session():
+    username = session.get("username_to_update")
+    return user_sessions.get(username)
+
+# === Config ===
+GROQ_API_KEY = "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"
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama3-70b-8192"
+
+# === TOOL REGISTRY ===
+tool_list = [
+    {"tool": "python_interpreter", "language": "python", "execution": "exec_in_memory"},
+    {"tool": "sql_interpreter", "language": "sql", "execution": "run_sqlite"},
+    {"tool": "sas_executor", "language": "sas", "execution": "run_sas"}
+]
+
+# === TOOL: File Loader ===
+def load_data(file_path):
+    try:
+        if file_path.endswith(".csv"):
+            return pd.read_csv(file_path, encoding="utf-8")
+        elif file_path.endswith((".xlsx", ".xls")):
+            return pd.read_excel(file_path)
+        elif file_path.endswith(".json"):
+            return pd.read_json(file_path)
+        else:
+            raise ValueError("Unsupported file format.")
+    except Exception as e:
+        print("❌ Error loading data:", e)
+        return None
+
+# === TOOL: Ask LLM to pick tool and generate code ===
+def ask_llm(task, preview):
+    system_msg = (
+        "You are an intelligent data analyst agent. Given a user task and data preview, choose the best tool and generate code.\n"
+        "Available tools:\n" + json.dumps(tool_list, indent=2) + "\n"
+        "Return a response strictly in this JSON format:\n"
+        "{\"tool\": ..., \"language\": ..., \"execution\": ..., \"code\": ...}"
+    )
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": f"Task:\n{task}\n\nPreview:\n{preview}"}
+        ],
+        "temperature": 0.3
+    }
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        res = requests.post(GROQ_API_URL, headers=headers, json=payload)
+        res.raise_for_status()
+        content = res.json()["choices"][0]["message"]["content"]
+
+        # Extract JSON part only
+        json_start = content.find("{")
+        if json_start == -1:
+            print("❌ No JSON object found in response.")
+            return None
+
+        content_json = content[json_start:].strip()
+        content_json = re.sub(r'(?<!\\)"', r'"', content_json)  # ensure double quotes
+        content_json = content_json.replace('\\"', '"')  # correct escaping
+        return json.loads(content_json)
+    except Exception as e:
+        print("❌ LLM error:", e)
+        return None
+
+# === TOOL: Execute Code ===
+def execute_code(tool, language, method, code, df):
+    try:
+        if method == "exec_in_memory":
+            local_vars = {"pd": pd, "df": df}
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                exec(code, local_vars)
+                if "task" in local_vars:
+                    result = local_vars["task"](df)
+                    if isinstance(result, pd.DataFrame):
+                        df[:] = result
+            return "✅ Executed", df
+
+        elif method == "run_sqlite":
+            conn = sqlite3.connect(":memory:")
+            df.to_sql("table_name", conn, index=False, if_exists="replace")
+            cur = conn.cursor()
+            queries = [q.strip() for q in code.split(';') if q.strip()]
+            for q in queries[:-1]:
+                cur.execute(q)
+            cur.execute(queries[-1])
+            rows = cur.fetchall()
+            columns = [desc[0] for desc in cur.description]
+            result_df = pd.DataFrame(rows, columns=columns)
+            return "✅ SQL executed", result_df
+
+        elif method == "run_sas":
+            sas = get_user_sas_session()
+            if sas:
+                sas.submit(code)
+                return "✅ SAS executed", df
+            return "❌ No SAS session", df
+
+        return "❌ Unknown execution method", df
+
+    except Exception as e:
+        return f"❌ Error: {e}", df
+
+# === TOOL: Retry Correction ===
+def retry(task, df, tool, language, method, code, error):
+    for i in range(3):
+        print(f"\n🔁 Retry {i+1}: Sending error to LLM")
+        correction_prompt = f"Error: {error}\n\nCode:\n{code}\n\nTask:\n{task}"
+        result = ask_llm(correction_prompt, df.head().to_string())
+        if result:
+            tool, language, method, code = result["tool"], result["language"], result["execution"], result["code"]
+            status, df = execute_code(tool, language, method, code, df)
+            if status.startswith("✅"):
+                return status, df
+    return "❌ Max retries reached", df
+
+# === MAIN ===
+def main():
+    print("\n📥 1. Upload file\n📝 2. Instruction only")
+    choice = input("Enter choice (1/2): ").strip()
+    df = pd.DataFrame()
+
+    if choice == "1":
+        file_path = input("Enter file path: ").strip()
+        df = load_data(file_path)
+        if df is None:
+            return
+        preview = df.head().to_string()
+        task = input("\nWhat do you want to do with this data? ")
+    elif choice == "2":
+        path = input("Enter task file path: ").strip()
+        task = open(path, encoding="utf-8").read()
+        preview = ""
+    else:
+        print("❌ Invalid choice")
+        return
+
+    response = ask_llm(task, preview)
+    if not response:
+        print("❌ Failed to get response from LLM")
+        return
+
+    tool, lang, method, code = response["tool"], response["language"], response["execution"], response["code"]
+    print(f"\n🤖 Tool: {tool}\n🧠 Language: {lang}\n⚙️ Execution: {method}\n\n📜 Code:\n{code}")
+
+    status, df = execute_code(tool, lang, method, code, df)
+
+    if not status.startswith("✅"):
+        status, df = retry(task, df, tool, lang, method, code, status)
+
+    print("\n📤 Final Output:", status)
+    if not df.empty:
+        try:
+            df.to_excel("output.xlsx", index=False)
+            print("💾 Saved to output.xlsx")
+        except Exception as e:
+            print("❌ Save failed:", e)
+
+if __name__ == "__main__":
+    main()

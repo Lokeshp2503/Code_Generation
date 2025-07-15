@@ -1,0 +1,5 @@
+import pandas as pd
+
+df = pd.read_excel('old_applicants.xlsx')
+result = df[(df['Gender'] == 'Male') & (df['Age'] > 80)]
+print(len(result))

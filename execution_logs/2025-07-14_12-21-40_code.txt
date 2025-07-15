@@ -1,0 +1,12 @@
+proc import datafile="old_applicants.xlsx" out=old_applicants replace;
+  getnames=yes;
+run;
+
+proc means data=old_applicants;
+  var Monthly_Income Total_Outstanding DTI_Ratio Credit_Score Age Employment_Years Existing_Loan_Amount Interest_Rate Loan_Tenure Overdue_Amount Loan_Amount;
+  output out=summary mean= std= median= mode=;
+run;
+
+proc freq data=old_applicants;
+  tables Applicant_Type City Gender Employment_Type Loan_Purpose Residence_Type Job_Stability_Flag Loan_Settlement_Flag Default_Flag;
+run;

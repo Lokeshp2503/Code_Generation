@@ -1,0 +1,4 @@
+import pandas as pd
+
+df = pd.read_excel('old_applicants.xlsx')
+print(df.sort_values('Applicant_Name')['Applicant_Name'].unique())

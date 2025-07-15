@@ -1,0 +1,6 @@
+✅ SQL executed.
+Output:
+Gender  Count  Percentage
+  None     71         0.0
+Female  12482         0.0
+  Male  12446         0.0

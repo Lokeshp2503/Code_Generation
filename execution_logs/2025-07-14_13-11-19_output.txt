@@ -1,0 +1,4 @@
+✅ SQL executed.
+Output:
+ total_applicants  avg_monthly_income  avg_total_outstanding  avg_dti_ratio  avg_credit_score   avg_age  avg_existing_loan_amount  avg_interest_rate  avg_loan_tenure  avg_overdue_amount  total_defaults  unique_cities  unique_employment_types  unique_loan_purposes
+            24999        77113.065523          123377.409096       1.599686        596.204168 42.423817               77253.99848          12.525246        32.387936        49784.274131           16942              5                        3                     5

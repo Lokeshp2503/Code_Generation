@@ -1,0 +1,7 @@
+import pandas as pd
+
+df = pd.read_excel('old_applicants.xlsx')
+
+df.drop_duplicates(inplace=True)
+
+print(df)

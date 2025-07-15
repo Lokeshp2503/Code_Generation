@@ -1,0 +1,5 @@
+import pandas as pd
+
+df = pd.read_csv('Sample.csv')
+result = df.groupby(['A', 'B', 'C']).size().reset_index(name='sq')
+print(result)

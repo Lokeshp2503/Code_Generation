@@ -1,0 +1,2 @@
+❌ Python Error:
+'<' not supported between instances of 'float' and 'str'

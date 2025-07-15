@@ -1,11 +1,15 @@
 import os
 import pandas as pd
-import difflib
-from code_runner_agent import run_code
-from code_generator_agent import ask_groq_for_code
+from langgraph.graph import StateGraph, END
+from utils import load_data, detect_language
+from typing import TypedDict, Optional, Any
+# from code_generator import ask_groq_for_code
+# from code_executor import run_code
+# from data_preparation_agent import data_preparation_agent
 
-# === Fuzzy Match Input File ===
+# === Shared Utilities ===
 def find_closest_filename(user_input):
+    import difflib
     supported_exts = ('.csv', '.xlsx', '.xls', '.json')
     all_files = [f for f in os.listdir() if f.lower().endswith(supported_exts)]
     matches = difflib.get_close_matches(user_input, all_files, n=1, cutoff=0.5)
@@ -16,88 +20,112 @@ def find_closest_filename(user_input):
         print("❌ No close file match found.")
         return None
 
-# === Load Data File ===
-def load_data(file_path):
-    try:
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext == ".csv":
-            df = pd.read_csv(file_path, encoding='ISO-8859-1')
-        elif ext in [".xlsx", ".xls"]:
-            df = pd.read_excel(file_path)
-        elif ext == ".json":
-            df = pd.read_json(file_path)
+# === LangGraph Nodes ===
+def decide_next_tool(state):
+    """Simple logic to pick next step based on current state"""
+    if state.get("result") and "Error" in str(state["result"]):
+        if not state.get("cleaned_once"):
+            return "data_preparation"
         else:
-            print(f"❌ Unsupported file format: {ext}")
-            return None
-        print("📊 Data Preview:")
-        print(df.head())
-        return df
-    except Exception as e:
-        print("❌ Error loading data:", e)
-        return None
-
-# === Detect Code Language from Generated Code (fallback)
-def detect_language_from_code(code: str) -> str:
-    if any(kw in code.lower() for kw in ["select", "from", "where"]):
-        return "sql"
-    elif "data " in code.lower() and "set" in code.lower():
-        return "sas"
+            return "code_generator"
+    elif not state.get("code"):
+        return "code_generator"
+    elif not state.get("result"):
+        return "code_executor"
     else:
-        return "python"
+        return END
 
-# === Main Orchestrator ===
+def code_generator_node(state):
+    prompt = state["prompt"]
+    print("🧠 Generating code...")
+    code = ask_groq_for_code(prompt)
+    state["code"] = code
+    return state
+
+def code_executor_node(state):
+    print("🚀 Running code...")
+    language = detect_language(state["code"])
+    result = run_code(state["code"], language, data_file=state["file_path"])
+    state["language"] = language
+    state["result"] = result
+    return state
+
+def data_preparation_node(state):
+    print("🧪 Cleaning data and retrying...")
+    cleaning_code, cleaned_file = data_preparation_agent(
+        state["result"], state["data_preview"], state["file_path"]
+    )
+    if cleaned_file:
+        state["file_path"] = cleaned_file
+        state["cleaned_once"] = True
+    return state
+
+# === Main Entry Point ===
 def main():
-    print("🧠 Welcome to CodeGen Runner!")
-    user_input = input("📁 Enter file name (full or partial): ").strip()
+    print("\U0001f9e0 Agentic AI Code Gen (LangGraph Style)")
+    user_input = input("📁 Enter filename (CSV, Excel, JSON): ").strip()
     file_path = find_closest_filename(user_input)
-    if not file_path:
+    if not file_path or not os.path.exists(file_path):
+        print("❌ File not found.")
         return
 
     df = load_data(file_path)
     if df is None:
+        print("❌ Failed to load the file.")
         return
 
-    file_name = os.path.basename(file_path)
-    table_name = os.path.splitext(file_name)[0]
+    table_name = os.path.splitext(os.path.basename(file_path))[0]
     data_preview = df.head(5).to_string()
 
-    while True:
-        task = input("\n💬 Enter your data task (or type 'exit'): ")
-        if task.lower() == "exit":
-            break
-
-        # === Hardcoded language hint logic ===
-        task_lower = task.lower()
-        if "sql" in task_lower:
-            lang_hint = "Respond ONLY with SQL code. Do not include any other languages."
-        elif "python" in task_lower:
-            lang_hint = "Respond ONLY with Python code. Do not include any other languages."
-        elif "sas" in task_lower:
-            lang_hint = "Respond ONLY with SAS code. Do not include any other languages."
-        else:
-            lang_hint = "Choose the best language (Python, SQL, SAS) and respond with only that."
-
-        prompt = f"""Here is a preview of a dataset from file '{file_name}':\n{data_preview}
+    task = input("\n💬 What do you want to do with the data? ").strip()
+    prompt = f"""
+Here is a preview of a dataset from a file named '{file_path}':
+{data_preview}
 
 Task: {task}
 
-Use the file name '{file_name}' for Python and table name '{table_name}' for SQL/SAS.
-{lang_hint}
-Respond with code only, no explanation."""
+Please generate only code (no explanation). Use the file name '{file_path}' if using Python,
+and table name '{table_name}' if using SQL or SAS.
+"""
 
-        generated_code = ask_groq_for_code(prompt)
-        print("\n🧾 Generated Code:\n")
-        print(generated_code)
+    initial_state = {
+        "prompt": prompt,
+        "file_path": file_path,
+        "data_preview": data_preview,
+        "task": task,
+        "cleaned_once": False,
+    }
 
-        # Fallback language detection
-        language = detect_language_from_code(generated_code)
+    # Build LangGraph
+    class AgentState(TypedDict, total=False):
+        prompt: str
+        code: str
+        result: Any
+        language: str
+        file_path: str
+        data_preview: str
+        task: str
+        cleaned_once: bool
 
-        print("\n🚀 Executing Code...")
-        result = run_code(generated_code, language, data_file=file_path)
+    graph = StateGraph(AgentState)
+    graph.add_node("decide", decide_next_tool)
+    graph.add_node("code_generator", code_generator_node)
+    graph.add_node("code_executor", code_executor_node)
+    graph.add_node("data_preparation", data_preparation_node)
 
-        print("\n🧾 Execution Result:\n")
-        print(result)
-        print("\n" + "=" * 60)
+    graph.set_entry_point("decide")
+    graph.add_edge("decide", "code_generator")
+    graph.add_edge("decide", "code_executor")
+    graph.add_edge("decide", "data_preparation")
+    graph.add_edge("code_generator", "decide")
+    graph.add_edge("code_executor", "decide")
+    graph.add_edge("data_preparation", "decide")
+
+    app = graph.compile()
+    final_state = app.invoke(initial_state)
+
+    print("\n📄 Final Code:\n", final_state.get("code", "N/A"))
+    print("\n🚀 Final Result:\n", final_state.get("result", "N/A"))
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,4 @@
+import pandas as pd
+
+df = pd.read_excel('old_applicants.xlsx')
+print(df[df['Applicant_Name'].str.startswith('L')]['Applicant_Name'].unique())

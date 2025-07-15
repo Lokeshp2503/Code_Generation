@@ -1,0 +1,2 @@
+❌ Python Error:
+invalid syntax (<string>, line 1)

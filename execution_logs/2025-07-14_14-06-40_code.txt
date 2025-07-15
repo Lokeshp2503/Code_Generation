@@ -1,0 +1,8 @@
+SELECT 
+    Gender, 
+    COUNT(*) as Count, 
+    ROUND(COUNT(*) / (SELECT COUNT(*) FROM old_applicants) * 100, 2) as Percentage
+FROM 
+    old_applicants
+GROUP BY 
+    Gender;

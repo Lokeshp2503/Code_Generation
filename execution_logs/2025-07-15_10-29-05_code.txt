@@ -1,0 +1,7 @@
+import pandas as pd
+
+df = pd.read_excel('old_applicants.xlsx')
+
+job_stability_distribution = df['Job_Stability_Flag'].value_counts()
+
+print(job_stability_distribution)

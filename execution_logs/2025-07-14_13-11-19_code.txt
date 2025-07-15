@@ -1,0 +1,17 @@
+SELECT 
+  COUNT(*) AS total_applicants,
+  AVG(Monthly_Income) AS avg_monthly_income,
+  AVG(Total_Outstanding) AS avg_total_outstanding,
+  AVG(DTI_Ratio) AS avg_dti_ratio,
+  AVG(Credit_Score) AS avg_credit_score,
+  AVG(Age) AS avg_age,
+  AVG(Existing_Loan_Amount) AS avg_existing_loan_amount,
+  AVG(Interest_Rate) AS avg_interest_rate,
+  AVG(Loan_Tenure) AS avg_loan_tenure,
+  AVG(Overdue_Amount) AS avg_overdue_amount,
+  COUNT(CASE WHEN Default_Flag = 1 THEN 1 END) AS total_defaults,
+  COUNT(DISTINCT City) AS unique_cities,
+  COUNT(DISTINCT Employment_Type) AS unique_employment_types,
+  COUNT(DISTINCT Loan_Purpose) AS unique_loan_purposes
+FROM 
+  old_applicants;
